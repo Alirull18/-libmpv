@@ -77,7 +77,8 @@ build() {
     ninja -C $buildroot/build$bit update
     ninja -C $buildroot/build$bit mpv-fullclean
     
-    ninja -C $buildroot/build$bit mpv
+    # -k 0 keeps going past a failed package so one run lists every package that fails (debugging aid).
+    ninja -C $buildroot/build$bit -k 0 mpv
 
     if [ -n "$(find $buildroot/build$bit -maxdepth 1 -type d -name "mpv*$arch*" -print -quit)" ] ; then
         echo "Successfully compiled $bit-bit. Continue"

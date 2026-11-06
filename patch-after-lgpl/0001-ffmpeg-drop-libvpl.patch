@@ -1,0 +1,34 @@
+From 7c5c3e1d9e44b89f7a73f33e5f27d3ddf9033716 Mon Sep 17 00:00:00 2001
+From: Alirull18 <Alirull18@users.noreply.github.com>
+Date: Fri, 6 Nov 2026 15:13:00 +0800
+Subject: [PATCH] ffmpeg: drop libvpl
+
+The libvpl patch no longer applies to libvpl's current master, which stops the whole build.
+Intel Quick Sync (libvpl) is not used by KayroTv, which decodes with Direct3D 11.
+---
+ packages/ffmpeg.cmake | 2 --
+ 1 file changed, 2 deletions(-)
+
+diff --git a/packages/ffmpeg.cmake b/packages/ffmpeg.cmake
+index 57d6b17..a66b315 100644
+--- a/packages/ffmpeg.cmake
++++ b/packages/ffmpeg.cmake
+@@ -22,7 +22,6 @@ ExternalProject_Add(ffmpeg
+         speex
+         vorbis
+         libxml2
+-        libvpl
+         libopenmpt
+         libjxl
+         libplacebo
+@@ -74,7 +73,6 @@ ExternalProject_Add(ffmpeg
+         --enable-openssl
+         --enable-libxml2
+         --enable-libmysofa
+-        --enable-libvpl
+         --enable-libjxl
+         --enable-libplacebo
+         --enable-libaribcaption
+-- 
+2.54.0.windows.1
+

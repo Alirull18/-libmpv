@@ -69,6 +69,10 @@ jobs:
           done
           # Disables every GPL-only and non-free package in FFmpeg and mpv.
           git am --3way ../compile-lgpl-libmpv.patch
+          # Local fixes that must apply on top of the LGPL patch (for example dropping a package whose patch broke).
+          for patch in ../patch-after-lgpl/*.patch ; do
+            git am --3way "$patch"
+          done
           bash ../build.sh -t 64 -c gcc -s true
 
       - name: Collect result and check the licence flags
