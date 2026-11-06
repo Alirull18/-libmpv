@@ -1,0 +1,35 @@
+From 36e9faad28d61c1706301d8dde0efcb1ae651ecc Mon Sep 17 00:00:00 2001
+From: Alirull18 <Alirull18@users.noreply.github.com>
+Date: Fri, 6 Nov 2026 22:12:47 +0800
+Subject: [PATCH] curl: link the OpenSSL dependencies last so configure checks
+ work with GNU ld
+
+OpenSSL is built static with zstd and brotli, so libcrypto.a needs those
+libraries after it on the link line. curl's OpenSSL checks link only
+OpenSSL, zlib and the Windows libs; the -l flags in CMAKE_C_FLAGS go
+before the object files, where GNU ld (gcc toolchain) ignores them. lld
+(clang toolchain) does not care about order, which is why upstream builds.
+Every check failed (SSL_set0_wbio, SSL_set1_ech_config_list), so configure
+stopped with "ECH support missing". Putting the libraries in
+CMAKE_C_STANDARD_LIBRARIES places them at the end of every link, and
+CMAKE_TRY_COMPILE_PLATFORM_VARIABLES carries them into the checks.
+---
+ packages/curl.cmake | 2 ++
+ 1 file changed, 2 insertions(+)
+
+diff --git a/packages/curl.cmake b/packages/curl.cmake
+index 37310b1..986626d 100644
+--- a/packages/curl.cmake
++++ b/packages/curl.cmake
+@@ -49,6 +49,8 @@ ExternalProject_Add(curl
+         -DCURL_USE_PKGCONFIG=ON
+         -DCMAKE_DISABLE_FIND_PACKAGE_Perl=ON
+         "-DCMAKE_C_FLAGS='-DNGHTTP2_STATICLIB -lz -lbrotlienc -lbrotlidec -lbrotlicommon -lzstd -lcrypt32 -lsecur32'"
++        "-DCMAKE_C_STANDARD_LIBRARIES='-lzstd -lbrotlienc -lbrotlidec -lbrotlicommon -lz -lws2_32 -lgdi32 -lcrypt32 -lbcrypt -lsecur32 -lkernel32 -luser32 -lwinspool -lshell32 -lole32 -loleaut32 -luuid -lcomdlg32 -ladvapi32'"
++        -DCMAKE_TRY_COMPILE_PLATFORM_VARIABLES=CMAKE_C_STANDARD_LIBRARIES
+     BUILD_COMMAND ${EXEC} ninja -C <BINARY_DIR>
+     INSTALL_COMMAND ${EXEC} ninja -C <BINARY_DIR> install
+     LOG_DOWNLOAD 1 LOG_UPDATE 1 LOG_CONFIGURE 1 LOG_BUILD 1 LOG_INSTALL 1
+-- 
+2.54.0.windows.1
+
