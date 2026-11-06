@@ -10,7 +10,12 @@ on:
       toolchain_ref:
         description: "shinchiro/mpv-winbuild-cmake commit or branch (blank = default branch; the exact commit is always recorded)"
         required: false
-        default: ""
+        default: "bda10a2816ce9908d419b3f4b564227330457e76"
+      clean_cache:
+        description: "Start from nothing: do not restore the saved build state"
+        required: false
+        default: false
+        type: boolean
       publish:
         description: "Publish a GitHub release from this build"
         required: false
@@ -59,6 +64,20 @@ jobs:
           sed -i '/ccache_conf.in/d' mpv-winbuild-cmake/CMakeLists.txt
           sed -i '/ccache/d' mpv-winbuild-cmake/exec.in
 
+      # A cold build takes over an hour before it reaches the last packages, so the build state is saved
+      # even when the run fails and the next run carries on from there. Tick clean_cache to start over.
+      - name: Restore saved build state
+        if: ${{ inputs.clean_cache != true }}
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            mpv-winbuild-cmake/build64
+            mpv-winbuild-cmake/src_packages
+            mpv-winbuild-cmake/install_rustup
+          key: libmpv-build-${{ github.run_id }}
+          restore-keys: |
+            libmpv-build-
+
       - name: Build
         shell: bash
         run: |
@@ -74,6 +93,16 @@ jobs:
             git am --3way "$patch"
           done
           bash ../build.sh -t 64 -c gcc -s true
+
+      - name: Save build state
+        if: ${{ always() }}
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            mpv-winbuild-cmake/build64
+            mpv-winbuild-cmake/src_packages
+            mpv-winbuild-cmake/install_rustup
+          key: libmpv-build-${{ github.run_id }}
 
       - name: Collect result and check the licence flags
         shell: bash

@@ -1,0 +1,50 @@
+From f467a89ca2cfb7392104436a7980475a563dee0d Mon Sep 17 00:00:00 2001
+From: Alirull18 <Alirull18@users.noreply.github.com>
+Date: Fri, 6 Nov 2026 17:04:16 +0800
+Subject: [PATCH] curl: build without HTTP/3 (ngtcp2, nghttp3)
+
+ngtcp2 needs an OpenSSL with QUIC support and failed to configure against the current OpenSSL
+master. KayroTv's player does not use HTTP/3.
+---
+ packages/curl.cmake | 10 ++++------
+ 1 file changed, 4 insertions(+), 6 deletions(-)
+
+diff --git a/packages/curl.cmake b/packages/curl.cmake
+index 9e2130b..37310b1 100644
+--- a/packages/curl.cmake
++++ b/packages/curl.cmake
+@@ -4,9 +4,7 @@ ExternalProject_Add(curl
+         c-ares
+         libpsl
+         libssh
+-        ngtcp2
+         nghttp2
+-        nghttp3
+         openssl
+         zlib
+         zstd
+@@ -40,17 +38,17 @@ ExternalProject_Add(curl
+         -DENABLE_UNICODE=ON
+         -DENABLE_THREADED_RESOLVER=ON
+         -DUSE_NGHTTP2=ON
+-        -DUSE_NGHTTP3=ON
+-        -DUSE_NGTCP2=ON
++        -DUSE_NGHTTP3=OFF
++        -DUSE_NGTCP2=OFF
+         -DUSE_WIN32_IDN=ON
+         -DUSE_WINDOWS_SSPI=ON
+         -DUSE_ECH=ON
+         -DUSE_HTTPSRR=ON
+         -DUSE_SSLS_EXPORT=ON
+-        -DUSE_PROXY_HTTP3=ON
++        -DUSE_PROXY_HTTP3=OFF
+         -DCURL_USE_PKGCONFIG=ON
+         -DCMAKE_DISABLE_FIND_PACKAGE_Perl=ON
+-        "-DCMAKE_C_FLAGS='-DNGHTTP3_STATICLIB -DNGHTTP2_STATICLIB -DNGTCP2_STATICLIB -lz -lbrotlienc -lbrotlidec -lbrotlicommon -lzstd -lcrypt32 -lsecur32'"
++        "-DCMAKE_C_FLAGS='-DNGHTTP2_STATICLIB -lz -lbrotlienc -lbrotlidec -lbrotlicommon -lzstd -lcrypt32 -lsecur32'"
+     BUILD_COMMAND ${EXEC} ninja -C <BINARY_DIR>
+     INSTALL_COMMAND ${EXEC} ninja -C <BINARY_DIR> install
+     LOG_DOWNLOAD 1 LOG_UPDATE 1 LOG_CONFIGURE 1 LOG_BUILD 1 LOG_INSTALL 1
+-- 
+2.54.0.windows.1
+
