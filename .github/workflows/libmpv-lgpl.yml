@@ -1,0 +1,155 @@
+name: libmpv-lgpl
+
+# Builds an LGPL libmpv (libmpv-2.dll) for 64-bit Windows from public sources, checks that no GPL or
+# non-free FFmpeg option slipped in, and archives the corresponding source of everything it downloaded.
+# Manual only. Nothing here runs on a schedule, and nothing prunes old releases.
+
+on:
+  workflow_dispatch:
+    inputs:
+      toolchain_ref:
+        description: "shinchiro/mpv-winbuild-cmake commit or branch (blank = default branch; the exact commit is always recorded)"
+        required: false
+        default: ""
+      publish:
+        description: "Publish a GitHub release from this build"
+        required: false
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build libmpv (LGPL, x86_64)
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    container:
+      image: ghcr.io/archlinux/archlinux:base-devel
+    steps:
+      - name: Install dependencies
+        shell: bash
+        run: |
+          sudo echo -e "[multilib]\nInclude = /etc/pacman.d/mirrorlist" | sudo tee -a /etc/pacman.conf >/dev/null
+          sudo pacman-key --init
+          sudo pacman-key --populate archlinux
+          sudo pacman -Syu --noconfirm
+          sudo pacman -S --noconfirm --needed git ninja cmake meson clang lld libc++ unzip ragel yasm nasm gperf rst2pdf lib32-gcc-libs lib32-glib2 python-cairo curl wget mimalloc ccache python-pip 7zip shaderc
+          sudo python -m pip install --break-system-packages roman
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git config --global pull.rebase true
+          git config --global rebase.autoStash true
+          git config --global fetch.prune true
+
+      - uses: actions/checkout@v4
+
+      - name: Checkout build toolchain (shinchiro/mpv-winbuild-cmake)
+        uses: actions/checkout@v4
+        with:
+          repository: shinchiro/mpv-winbuild-cmake
+          ref: ${{ inputs.toolchain_ref }}
+          path: mpv-winbuild-cmake
+          fetch-depth: 0
+
+      - name: Prepare
+        shell: bash
+        run: |
+          sed -i '/ccache_conf.in/d' mpv-winbuild-cmake/CMakeLists.txt
+          sed -i '/ccache/d' mpv-winbuild-cmake/exec.in
+
+      - name: Build
+        shell: bash
+        run: |
+          chmod +x build.sh
+          cd mpv-winbuild-cmake
+          for patch in ../patch/*.patch ; do
+            git am --3way "$patch" || git am --abort
+          done
+          # Disables every GPL-only and non-free package in FFmpeg and mpv.
+          git am --3way ../compile-lgpl-libmpv.patch
+          bash ../build.sh -t 64 -c gcc -s true
+
+      - name: Collect result and check the licence flags
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p out
+          cd mpv-winbuild-cmake
+          pkg=$(ls release/mpv-dev-lgpl-x86_64-*.7z | head -n1)
+          test -n "$pkg"
+          cp "$pkg" ../out/
+          mkdir -p /tmp/check && 7z x -y -o/tmp/check "$pkg" >/dev/null
+          dll=$(find /tmp/check -name 'libmpv-2.dll' | head -n1)
+          test -n "$dll"
+          # FFmpeg stores its configure line inside the library. Record it, and fail on GPL or non-free.
+          cfg=$(grep -a -o -- '--[a-z0-9_-]*\(=[^ ]*\)\?' "$dll" | sort -u || true)
+          printf '%s\n' "$cfg" > ../out/ffmpeg-configure-flags.txt
+          if grep -q -e '^--enable-gpl$' -e '^--enable-nonfree$' ../out/ffmpeg-configure-flags.txt; then
+            echo "::error::The build contains --enable-gpl or --enable-nonfree; this is not an LGPL build"
+            exit 1
+          fi
+          {
+            echo "built_at_utc=$(date -u +%FT%TZ)"
+            echo "workflow_run=${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+            echo "build_scripts_commit=${GITHUB_SHA}"
+            echo "toolchain_repo=https://github.com/shinchiro/mpv-winbuild-cmake"
+            echo "toolchain_commit=$(git rev-parse HEAD)"
+            echo "mpv_commit=$(git -C src_packages/mpv rev-parse HEAD)"
+            echo "ffmpeg_commit=$(git -C src_packages/ffmpeg rev-parse HEAD)"
+            echo "package=$(basename "$pkg")"
+            echo "libmpv_dll_sha256=$(sha256sum "$dll" | cut -d' ' -f1)"
+            echo "package_sha256=$(sha256sum "$pkg" | cut -d' ' -f1)"
+          } > ../out/BUILD-INFO.txt
+          cat ../out/BUILD-INFO.txt
+
+      - name: Record and archive the corresponding sources
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash scripts/archive-sources.sh mpv-winbuild-cmake/src_packages out
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: libmpv-lgpl
+          path: out/
+          if-no-files-found: error
+
+      - name: Upload build logs
+        if: ${{ always() }}
+        shell: bash
+        run: |
+          mkdir -p logs
+          find mpv-winbuild-cmake/build64 -type f \( -iname '*-*.log' -o -wholename '*/ffbuild/config.log' \) -print0 2>/dev/null | xargs -0 -r 7z a logs/logs.7z >/dev/null || true
+      - uses: actions/upload-artifact@v4
+        if: ${{ always() }}
+        with:
+          name: build-logs
+          path: logs/
+          if-no-files-found: ignore
+
+  publish:
+    name: Publish release
+    needs: build
+    if: ${{ inputs.publish == true }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: libmpv-lgpl
+          path: out
+      - name: Create the release (never pruned)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd out
+          mpv_sha=$(grep '^mpv_commit=' BUILD-INFO.txt | cut -d= -f2 | cut -c1-10)
+          tag="libmpv-lgpl-$(date -u +%Y-%m-%d)-${mpv_sha}"
+          sha256sum * > SHA256SUMS.txt
+          gh release create "$tag" --repo "$GITHUB_REPOSITORY" --title "libmpv LGPL $tag" \
+            --notes-file BUILD-INFO.txt ./*
